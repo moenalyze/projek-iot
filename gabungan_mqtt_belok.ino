@@ -3,8 +3,8 @@
 #include <PubSubClient.h>
 #include "HX711.h"
 
-const char* ssid = "V2038";
-const char* password = "janganmintahotspot";
+const char* ssid = "ssid";
+const char* password = "password";
 
 const char* mqtt_server = "3577e8e742b544419045e2a77c8ec76d.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
