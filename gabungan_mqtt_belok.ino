@@ -3,9 +3,6 @@
 #include <PubSubClient.h>
 #include "HX711.h"
 
-// =========================================
-// 1. KONFIGURASI WIFI & MQTT
-// =========================================
 const char* ssid = "V2038";
 const char* password = "janganmintahotspot";
 
@@ -24,9 +21,6 @@ const char* topic_status = "device/status";
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
-// =========================================
-// 2. KONFIGURASI PIN & VARIABEL
-// =========================================
 const int ENA_PIN = 14;
 const int IN1_PIN = 26;
 const int IN2_PIN = 27;
@@ -43,7 +37,6 @@ float calibration_factor = (116.66 * 1000) / 232;
 
 const int BUZZER_PIN = 32;
 
-// --- STATUS VARIABEL ---
 float maxWeight = 300.0;
 bool motorEnabled = true;
 bool alarmEnabled = false;
@@ -53,11 +46,10 @@ String currentDirection = "stop";
 String lastDirection = "";        
 bool lastMotorEnabled = false;
 
-// --- TIMER & MULTITASKING ---
 unsigned long lastWeightSend = 0;
 const long weightSendInterval = 1000;
 
-unsigned long lastReconnectAttempt = 0; // Untuk Non-blocking Reconnect
+unsigned long lastReconnectAttempt = 0;
 
 void beep(int times, int duration) {
   for (int i = 0; i < times; i++) {
@@ -68,9 +60,6 @@ void beep(int times, int duration) {
   }
 }
 
-// =========================================
-// 3. FUNGSI MOTOR (LOGIKA FISIK)
-// =========================================
 void applyMotorState() {
   Serial.print(">>> MOTOR STATE: ");
   
@@ -120,15 +109,11 @@ void applyMotorState() {
   }
 }
 
-// =========================================
-// 4. SETUP WIFI & MQTT
-// =========================================
 void setup_wifi() {
   delay(10);
   Serial.println(); Serial.print("WiFi: "); Serial.println(ssid);
   WiFi.begin(ssid, password);
   
-  // Tunggu WiFi (Blocking hanya di awal tidak masalah)
   int retry = 0;
   while (WiFi.status() != WL_CONNECTED && retry < 20) {
     delay(500); Serial.print(".");
@@ -148,8 +133,6 @@ void setup_wifi() {
 void mqtt_callback(char* topic, byte* payload, unsigned int length) {
   String message = "";
   for (int i = 0; i < length; i++) message += (char)payload[i];
-  
-  // Serial.print("Pesan: "); Serial.println(message); // Debugging (boleh dimatikan biar cepat)
 
   if (String(topic) == topic_control) {
     if (message.indexOf("\"motor_enabled\":true") > 0) motorEnabled = true;
@@ -169,24 +152,19 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
     else if (message.indexOf("\"direction\":\"stop\"") > 0) { currentDirection = "stop"; } // Stop gak perlu bunyi
 
     if (gerak) {
-       // Gunakan durasi sangat pendek (50ms) agar tidak nge-lag motor
        beep(2, 50); 
     }
   }
   
-  // Logic settings (Max Weight) - disederhanakan
   if (String(topic) == topic_settings) {
     int idx = message.indexOf("\"max_weight\":");
     if (idx > 0) {
-       // Ambil substring dan konversi (simple parsing)
        String val = message.substring(idx + 13);
        maxWeight = val.toFloat();
     }
   }
 }
 
-// --- OPTIMASI 1: NON-BLOCKING RECONNECT ---
-// Fungsi ini tidak akan menahan program (tidak ada while loop yang macet)
 boolean reconnect() {
   if (WiFi.status() != WL_CONNECTED) return false; // Jangan coba connect MQTT kalau WiFi mati
 
@@ -200,10 +178,8 @@ boolean reconnect() {
   return false;
 }
 
-// --- OPTIMASI 2: BUFFER & SNPRINTF ---
-// Lebih hemat memori daripada String + String
 void sendWeightData(float weight) {
-  char jsonBuffer[128]; // Buffer statis
+  char jsonBuffer[128];
   snprintf(jsonBuffer, sizeof(jsonBuffer), 
            "{\"device_id\":\"%s\",\"weight\":%.2f,\"timestamp\":\"%lu\"}", 
            device_id, weight, millis());
@@ -211,9 +187,6 @@ void sendWeightData(float weight) {
   client.publish(topic_weight_data, jsonBuffer);
 }
 
-// =========================================
-// 5. MAIN SETUP
-// =========================================
 void setup() {
   Serial.begin(115200);
   
@@ -240,14 +213,10 @@ void setup() {
   Serial.println("Sistem Siap.");
 }
 
-// =========================================
-// 6. MAIN LOOP
-// =========================================
 void loop() {
-  // --- LOGIKA KONEKSI NON-BLOCKING ---
   if (!client.connected()) {
     unsigned long now = millis();
-    // Coba connect ulang setiap 5 detik, TAPI JANGAN BLOCK KODE LAIN
+
     if (now - lastReconnectAttempt > 5000) {
       lastReconnectAttempt = now;
       if (reconnect()) {
@@ -258,12 +227,9 @@ void loop() {
     client.loop();
   }
 
-  // --- LOGIKA SENSOR ---
-  // OPTIMASI 3: get_units(1) agar lebih responsif
   if (scale.is_ready()) {
     unsigned long now = millis();
     if (now - lastWeightSend >= weightSendInterval) {
-      // Ambil 1 sampel saja biar cepat (atau max 3)
       float berat = scale.get_units(1);
       if (berat < 3.0) {
          berat = 0.0;
@@ -273,11 +239,9 @@ void loop() {
     }
   }
 
-  // --- LOGIKA AKTUATOR ---
   if (alarmEnabled) digitalWrite(BUZZER_PIN, HIGH);
   else digitalWrite(BUZZER_PIN, LOW);
 
-  // Cek Perubahan Status Motor
   if (currentDirection != lastDirection || motorEnabled != lastMotorEnabled) {
     applyMotorState();
     lastDirection = currentDirection;
